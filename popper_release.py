@@ -42,14 +42,27 @@ def download(version_info):
     filename = f"Shopper_{version_info['version']}.apk"
     file_path = os.path.join(os.getcwd(), filename)
 
-    with open(file_path, "wb") as f:
-        response = requests.get(version_info['url'], stream=True)
-        response.raise_for_status()
-        
-        for data in response.iter_content(1024):
-            f.write(data)
+    if not os.path.exists(file_path):
+        with open(file_path, "wb") as f:
+            response = requests.get(version_info['url'], stream=True)
+            response.raise_for_status()
+            
+            for data in response.iter_content(1024):
+                f.write(data)
 
     return file_path
+
+def get_existing_releases():
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    response = requests.get(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", headers=headers)
+    response.raise_for_status()
+    releases = response.json()
+
+    return [release['tag_name'].lstrip('v') for release in releases]
 
 def create_github_release(version_info):
     headers = {
@@ -66,17 +79,10 @@ def create_github_release(version_info):
     }
 
     response = requests.post(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", json=data, headers=headers)
+    response.raise_for_status()
+    release = response.json()
 
-    if response.status_code == 422:
-        existing_releases = requests.get(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", headers=headers)
-        existing_releases.raise_for_status()
-        for release in existing_releases.json():
-            if release["tag_name"] == f"v{version_info['version']}":
-                return release["upload_url"].replace("{?name,label}", "")
-    else:
-        response.raise_for_status()
-        release = response.json()
-        return release["upload_url"].replace("{?name,label}", "")
+    return release["upload_url"].replace("{?name,label}", "")
 
 def upload_asset_to_release(upload_url, file_path):
     headers = {
@@ -91,13 +97,21 @@ def upload_asset_to_release(upload_url, file_path):
 def main():
     url = 'https://storage.yandexcloud.net/sbermarker-shopper-distribution/'
     versions = fetch_versions(url)
-    
+    existing_releases = get_existing_releases()
+
     for version_info in versions:
-        file_path = download(version_info)
-        
-        if file_path:
-            release_url = create_github_release(version_info)
-            upload_asset_to_release(release_url, file_path)
+        if version_info['version'] not in existing_releases:
+            print(f"Скачивание версии {version_info['version']}")
+            file_path = download(version_info)
+            
+            if file_path:
+                print(f"Создание релиза для версии {version_info['version']}")
+                release_url = create_github_release(version_info)
+                print(f"Загрузка APK для версии {version_info['version']}")
+                upload_asset_to_release(release_url, file_path)
+                print(f"Релиз версии {version_info['version']} успешно создан и APK загружен.")
+        else:
+            print(f"Версия {version_info['version']} уже существует, пропуск.")
 
 if __name__ == "__main__":
     main()
