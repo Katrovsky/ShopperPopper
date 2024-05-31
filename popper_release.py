@@ -2,7 +2,6 @@ import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import os
-from tqdm import tqdm
 
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_REPO = "Katrovsky/ShopperPopper"
@@ -15,7 +14,6 @@ def fetch_versions(url):
     root = ET.fromstring(response.content)
     namespace = {'ns': 'http://s3.amazonaws.com/doc/2006-03-01/'}
     contents = root.findall('ns:Contents', namespace)
-    contents.reverse()
     
     versions = []
     
@@ -37,6 +35,7 @@ def fetch_versions(url):
             'url': download_url
         })
     
+    versions.sort(key=lambda v: list(map(int, v['version'].split('.'))))
     return versions
 
 def download(version_info):
@@ -47,22 +46,10 @@ def download(version_info):
         response = requests.get(version_info['url'], stream=True)
         response.raise_for_status()
         
-        total_size = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        progress_bar = tqdm(total=total_size, unit='B', unit_scale=True, desc=filename, ncols=100)
-        
-        for data in response.iter_content(block_size):
-            progress_bar.update(len(data))
+        for data in response.iter_content(1024):
             f.write(data)
-        
-        progress_bar.close()
 
-    if os.path.getsize(file_path) == total_size:
-        print(f"Файл успешно скачан. Путь: {file_path}")
-        return file_path
-    else:
-        print("Ошибка: Размер загруженного файла не соответствует ожидаемому размеру.")
-        return None
+    return file_path
 
 def create_github_release(version_info):
     headers = {
@@ -87,7 +74,7 @@ def create_github_release(version_info):
 def upload_asset_to_release(upload_url, file_path):
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
-        "Content-Type": "application/zip"  # Adjust if the file is not a zip
+        "Content-Type": "application/vnd.android.package-archive"
     }
 
     with open(file_path, "rb") as f:
@@ -99,7 +86,6 @@ def main():
     versions = fetch_versions(url)
     
     for version_info in versions:
-        print(f"Загружается версия: {version_info['version']}")
         file_path = download(version_info)
         
         if file_path:
