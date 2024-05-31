@@ -19,7 +19,7 @@ jobs:
         python-version: '3.12'
 
     - name: Install dependencies
-      run: pip install requests tqdm
+      run: pip install requests
 
     - name: Run download and release script
       env:

@@ -66,10 +66,17 @@ def create_github_release(version_info):
     }
 
     response = requests.post(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", json=data, headers=headers)
-    response.raise_for_status()
-    release = response.json()
 
-    return release["upload_url"].replace("{?name,label}", "")
+    if response.status_code == 422:
+        existing_releases = requests.get(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", headers=headers)
+        existing_releases.raise_for_status()
+        for release in existing_releases.json():
+            if release["tag_name"] == f"v{version_info['version']}":
+                return release["upload_url"].replace("{?name,label}", "")
+    else:
+        response.raise_for_status()
+        release = response.json()
+        return release["upload_url"].replace("{?name,label}", "")
 
 def upload_asset_to_release(upload_url, file_path):
     headers = {
