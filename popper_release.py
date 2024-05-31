@@ -1,7 +1,7 @@
+import os
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
-import os
 
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_REPO = "Katrovsky/ShopperPopper"
@@ -64,7 +64,7 @@ def get_existing_releases():
 
     return [release['tag_name'].lstrip('v') for release in releases]
 
-def create_github_release(version_info):
+def create_github_release(version_info, asset_name):
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
@@ -82,7 +82,8 @@ def create_github_release(version_info):
     response.raise_for_status()
     release = response.json()
 
-    return release["upload_url"].replace("{?name,label}", "")
+    upload_url = release["upload_url"].replace("{?name,label}", f"?name={asset_name}")
+    return upload_url
 
 def upload_asset_to_release(upload_url, file_path):
     headers = {
@@ -91,7 +92,7 @@ def upload_asset_to_release(upload_url, file_path):
     }
 
     with open(file_path, "rb") as f:
-        response = requests.post(f"{upload_url}?name={os.path.basename(file_path)}", headers=headers, data=f)
+        response = requests.post(upload_url, headers=headers, data=f)
         response.raise_for_status()
 
 def main():
@@ -106,7 +107,8 @@ def main():
             
             if file_path:
                 print(f"Создание релиза для версии {version_info['version']}")
-                release_url = create_github_release(version_info)
+                asset_name = f"Shopper_{version_info['version']}.apk"
+                release_url = create_github_release(version_info, asset_name)
                 print(f"Загрузка APK для версии {version_info['version']}")
                 upload_asset_to_release(release_url, file_path)
                 print(f"Релиз версии {version_info['version']} успешно создан и APK загружен.")
