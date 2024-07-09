@@ -8,7 +8,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -24,4 +23,86 @@ jobs:
     - name: Run download and release script
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: python popper_release.py
+      run: |
+        cat << EOF > popper_release.py
+        import os
+        import requests
+        from datetime import datetime
+        from xml.etree import ElementTree as ET
+
+        GITHUB_API_URL = "https://api.github.com"
+        GITHUB_REPO = "Katrovsky/ShopperPopper"
+        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+        STORAGE_URL = 'https://storage.yandexcloud.net/sbermarker-shopper-distribution/'
+
+        def fetch_versions():
+            response = requests.get(STORAGE_URL)
+            response.raise_for_status()
+            
+            root = ET.fromstring(response.content)
+            namespace = {'ns': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+            
+            versions = []
+            for content in root.findall('ns:Contents', namespace):
+                key = content.find('ns:Key', namespace).text
+                last_modified = content.find('ns:LastModified', namespace).text
+                size = int(content.find('ns:Size', namespace).text)
+                
+                version = key.split('/')[-1].replace('shopper-', '').replace('.apk', '')
+                last_modified = datetime.fromisoformat(last_modified.replace('Z', '+00:00')).strftime('%d.%m.%y %H:%M:%S')
+                size_mb = round(size / (1024 * 1024), 1)
+                
+                versions.append({
+                    'version': version,
+                    'last_modified': last_modified,
+                    'size': size_mb,
+                    'url': STORAGE_URL + key
+                })
+            
+            return sorted(versions, key=lambda v: list(map(int, v['version'].split('.'))))
+
+        def get_existing_releases():
+            headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+            response = requests.get(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", headers=headers)
+            response.raise_for_status()
+            return {release['tag_name'].lstrip('v') for release in response.json()}
+
+        def create_and_upload_release(version_info):
+            headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+            
+            release_data = {
+                "tag_name": f"v{version_info['version']}",
+                "name": f"Shopper {version_info['version']}",
+                "body": f"Версия: {version_info['version']}\nПоследнее изменение: {version_info['last_modified']}\nРазмер: {version_info['size']} MB",
+                "draft": False,
+                "prerelease": False
+            }
+            
+            response = requests.post(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", json=release_data, headers=headers)
+            response.raise_for_status()
+            upload_url = response.json()["upload_url"].split('{')[0]
+            
+            asset_name = f"Shopper_{version_info['version']}.apk"
+            headers["Content-Type"] = "application/vnd.android.package-archive"
+            
+            with requests.get(version_info['url'], stream=True) as r:
+                r.raise_for_status()
+                response = requests.post(f"{upload_url}?name={asset_name}", headers=headers, data=r.iter_content(chunk_size=8192))
+                response.raise_for_status()
+
+        def main():
+            versions = fetch_versions()
+            existing_releases = get_existing_releases()
+
+            for version_info in versions:
+                if version_info['version'] not in existing_releases:
+                    print(f"Обработка версии {version_info['version']}")
+                    create_and_upload_release(version_info)
+                    print(f"Релиз версии {version_info['version']} успешно создан и APK загружен.")
+                else:
+                    print(f"Версия {version_info['version']} уже существует, пропуск.")
+
+        if __name__ == "__main__":
+            main()
+        EOF
+        python popper_release.py
