@@ -105,4 +105,7 @@ if __name__ == "__main__":
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: python popper_release.py
+<<<<<<< HEAD
+>>>>>>> parent of 548f892 (Update release.yml)
+=======
 >>>>>>> parent of 548f892 (Update release.yml)
