@@ -8,6 +8,7 @@ GITHUB_REPO = "Katrovsky/ShopperPopper"
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 STORAGE_URL = 'https://storage.yandexcloud.net/sbermarker-shopper-distribution/'
 
+<<<<<<< HEAD
 def fetch_versions():
     response = requests.get(STORAGE_URL)
     response.raise_for_status()
@@ -33,6 +34,15 @@ def fetch_versions():
         })
     
     return sorted(versions, key=lambda v: list(map(int, v['version'].split('.'))))
+=======
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+>>>>>>> parent of 548f892 (Update release.yml)
 
 def get_existing_releases():
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
@@ -75,6 +85,7 @@ def create_and_upload_release(version_info):
     
     print(f"APK файл {asset_name} успешно загружен в релиз.")
 
+<<<<<<< HEAD
 def main():
     versions = fetch_versions()
     existing_releases = get_existing_releases()
@@ -89,3 +100,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+=======
+    - name: Run download and release script
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python popper_release.py
+>>>>>>> parent of 548f892 (Update release.yml)
