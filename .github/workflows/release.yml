@@ -36,10 +36,11 @@ jobs:
               url = "https://storage.yandexcloud.net/sbermarker-shopper-distribution/"
               response = requests.get(url)
               content = response.text
-              apk_list = re.findall(r'<Key>(\d+)/shopper-(\d+\.\d+\.\d+)\.apk</Key>', content)
-              last_modified = re.findall(r'<LastModified>(.+?)</LastModified>', content)
-              sizes = re.findall(r'<Size>(\d+)</Size>', content)
-              return sorted(zip(apk_list, last_modified, sizes), key=lambda x: [int(i) for i in x[0][1].split('.')])
+              apk_info = re.findall(r'<Key>(\d+)/shopper-(\d+\.\d+\.\d+)\.apk</Key>.*?<LastModified>(.+?)</LastModified>.*?<Size>(\d+)</Size>', content, re.DOTALL)
+              
+              sorted_apk_info = sorted(apk_info, key=lambda x: tuple(map(int, x[1].split('.'))))
+              
+              return [(folder, version, last_modified, size) for folder, version, last_modified, size in sorted_apk_info]
 
           def download_apk(folder, version):
               url = f"https://storage.yandexcloud.net/sbermarker-shopper-distribution/{folder}/shopper-{version}.apk"
@@ -60,7 +61,7 @@ jobs:
           existing_releases = {release.tag_name: release for release in repo.get_releases()}
           apk_list = get_apk_list()
 
-          for (folder, version), last_modified, size in apk_list:
+          for folder, version, last_modified, size in apk_list:
               if version not in existing_releases:
                   print(f"Downloading version {version}")
                   download_apk(folder, version)
