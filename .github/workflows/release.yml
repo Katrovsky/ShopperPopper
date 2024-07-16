@@ -1,117 +1,81 @@
-import os
-import requests
-from datetime import datetime
-from xml.etree import ElementTree as ET
+name: Update APK Releases
 
-GITHUB_API_URL = "https://api.github.com"
-GITHUB_REPO = "Katrovsky/ShopperPopper"
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-STORAGE_URL = 'https://storage.yandexcloud.net/sbermarker-shopper-distribution/'
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Запускать каждые четыре часа
+  workflow_dispatch:  # Позволяет запускать workflow вручную
 
-<<<<<<< HEAD
-def fetch_versions():
-    response = requests.get(STORAGE_URL)
-    response.raise_for_status()
-    
-    root = ET.fromstring(response.content)
-    namespace = {'ns': 'http://s3.amazonaws.com/doc/2006-03-01/'}
-    
-    versions = []
-    for content in root.findall('ns:Contents', namespace):
-        key = content.find('ns:Key', namespace).text
-        last_modified = content.find('ns:LastModified', namespace).text
-        size = int(content.find('ns:Size', namespace).text)
-        
-        version = key.split('/')[-1].replace('shopper-', '').replace('.apk', '')
-        last_modified = datetime.fromisoformat(last_modified.replace('Z', '+00:00')).strftime('%d.%m.%y %H:%M:%S')
-        size_mb = round(size / (1024 * 1024), 1)
-        
-        versions.append({
-            'version': version,
-            'last_modified': last_modified,
-            'size': size_mb,
-            'url': STORAGE_URL + key
-        })
-    
-    return sorted(versions, key=lambda v: list(map(int, v['version'].split('.'))))
-=======
 jobs:
-  release:
+  update-releases:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
->>>>>>> parent of 548f892 (Update release.yml)
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-def get_existing_releases():
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    response = requests.get(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", headers=headers)
-    response.raise_for_status()
-    return {release['tag_name'].lstrip('v') for release in response.json()}
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
 
-def create_and_upload_release(version_info):
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    
-    release_data = {
-        "tag_name": f"v{version_info['version']}",
-        "name": f"Shopper {version_info['version']}",
-        "body": f"Версия: {version_info['version']}\nПоследнее изменение: {version_info['last_modified']}\nРазмер: {version_info['size']} MB",
-        "draft": False,
-        "prerelease": False
-    }
-    
-    # Создаем релиз
-    response = requests.post(f"{GITHUB_API_URL}/repos/{GITHUB_REPO}/releases", json=release_data, headers=headers)
-    response.raise_for_status()
-    release = response.json()
-    
-    # Получаем URL для загрузки ассетов
-    upload_url = release["upload_url"].split('{')[0]
-    
-    # Загружаем APK файл
-    asset_name = f"Shopper_{version_info['version']}.apk"
-    headers["Content-Type"] = "application/vnd.android.package-archive"
-    
-    # Скачиваем APK файл и сразу загружаем его в релиз
-    with requests.get(version_info['url'], stream=True) as r:
-        r.raise_for_status()
-        response = requests.post(
-            f"{upload_url}?name={asset_name}",
-            headers=headers,
-            data=r.iter_content(chunk_size=8192)
-        )
-        response.raise_for_status()
-    
-    print(f"APK файл {asset_name} успешно загружен в релиз.")
+      - name: Install dependencies
+        run: |
+          pip install requests pytz PyGithub
 
-<<<<<<< HEAD
-def main():
-    versions = fetch_versions()
-    existing_releases = get_existing_releases()
+      - name: Download and release APKs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          import requests
+          import re
+          import os
+          from github import Github
+          from datetime import datetime
+          import pytz
 
-    for version_info in versions:
-        if version_info['version'] not in existing_releases:
-            print(f"Обработка версии {version_info['version']}")
-            create_and_upload_release(version_info)
-            print(f"Релиз версии {version_info['version']} успешно создан и APK загружен.")
-        else:
-            print(f"Версия {version_info['version']} уже существует, пропуск.")
+          def get_apk_list():
+              url = "https://storage.yandexcloud.net/sbermarker-shopper-distribution/"
+              response = requests.get(url)
+              content = response.text
+              apk_list = re.findall(r'<Key>(\d+)/shopper-(\d+\.\d+\.\d+)\.apk</Key>', content)
+              last_modified = re.findall(r'<LastModified>(.+?)</LastModified>', content)
+              sizes = re.findall(r'<Size>(\d+)</Size>', content)
+              return sorted(zip(apk_list, last_modified, sizes), key=lambda x: [int(i) for i in x[0][1].split('.')])
 
-if __name__ == "__main__":
-    main()
-=======
-    - name: Run download and release script
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: python popper_release.py
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> parent of 548f892 (Update release.yml)
-=======
->>>>>>> parent of 548f892 (Update release.yml)
-=======
->>>>>>> parent of 548f892 (Update release.yml)
-=======
->>>>>>> parent of 548f892 (Update release.yml)
+          def download_apk(folder, version):
+              url = f"https://storage.yandexcloud.net/sbermarker-shopper-distribution/{folder}/shopper-{version}.apk"
+              response = requests.get(url)
+              with open("shopper.apk", "wb") as f:
+                  f.write(response.content)
+
+          def format_description(version, last_modified, size):
+              dt = datetime.strptime(last_modified, "%Y-%m-%dT%H:%M:%S.%fZ")
+              dt_utc = dt.replace(tzinfo=pytz.UTC)
+              formatted_date = dt_utc.strftime("%d.%m.%y %H:%M:%S")
+              size_mb = round(int(size) / (1024 * 1024), 1)
+              return f"Версия: {version}\nПоследнее изменение: {formatted_date}\nРазмер: {size_mb} MB"
+
+          g = Github(os.environ['GITHUB_TOKEN'])
+          repo = g.get_repo(os.environ['GITHUB_REPOSITORY'])
+
+          existing_releases = [release.tag_name for release in repo.get_releases()]
+          apk_list = get_apk_list()
+
+          for (folder, version), last_modified, size in apk_list:
+              if version not in existing_releases:
+                  print(f"Downloading version {version}")
+                  download_apk(folder, version)
+                  
+                  description = format_description(version, last_modified, size)
+                  print(f"Creating release for version {version}")
+                  release = repo.create_git_release(
+                      tag=version,
+                      name=f"Shopper {version}",
+                      message=description
+                  )
+                  release.upload_asset("shopper.apk", name="shopper.apk", content_type="application/vnd.android.package-archive")
+                  
+                  os.remove("shopper.apk")
+              else:
+                  print(f"Version {version} already exists, skipping")
+
+        shell: python
