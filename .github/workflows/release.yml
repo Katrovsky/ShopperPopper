@@ -1,26 +1,21 @@
 name: Update APK Releases
-
 on:
   schedule:
     - cron: '0 */4 * * *'
   workflow_dispatch:
-
 jobs:
   update-releases:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
-
       - name: Install dependencies
         run: |
           pip install requests pytz PyGithub
-
       - name: Download and release APKs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,10 +32,7 @@ jobs:
               response = requests.get(url)
               content = response.text
               apk_info = re.findall(r'<Key>(\d+)/shopper-(\d+\.\d+\.\d+)\.apk</Key>.*?<LastModified>(.+?)</LastModified>.*?<Size>(\d+)</Size>', content, re.DOTALL)
-
-              sorted_apk_info = sorted(apk_info, key=lambda x: tuple(map(int, x[1].split('.'))))
-              
-              return [(folder, version, last_modified, size) for folder, version, last_modified, size in sorted_apk_info]
+              return sorted(apk_info, key=lambda x: tuple(map(int, x[1].split('.'))))
 
           def download_apk(folder, version):
               url = f"https://storage.yandexcloud.net/sbermarker-shopper-distribution/{folder}/shopper-{version}.apk"
@@ -49,46 +41,33 @@ jobs:
                   f.write(response.content)
 
           def format_description(version, last_modified, size):
-              dt = datetime.strptime(last_modified, "%Y-%m-%dT%H:%M:%S.%fZ")
-              dt_utc = dt.replace(tzinfo=pytz.UTC)
-              formatted_date = dt_utc.strftime("%d.%m.%y %H:%M:%S")
+              dt = datetime.strptime(last_modified, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=pytz.UTC)
+              formatted_date = dt.strftime("%d.%m.%Y %H:%M:%S UTC")
               size_mb = round(int(size) / (1024 * 1024), 1)
               return f"Версия: {version}\nПоследнее изменение: {formatted_date}\nРазмер: {size_mb} MB"
 
           g = Github(os.environ['GITHUB_TOKEN'])
           repo = g.get_repo(os.environ['GITHUB_REPOSITORY'])
-
-          existing_releases = {}
-          for release in repo.get_releases():
-              version = release.tag_name
-              if version.startswith('v'):
-                  version = version[1:]
-              existing_releases[version] = release
-
+          existing_releases = {release.tag_name: release for release in repo.get_releases()}
           apk_list = get_apk_list()
-
-          latest_existing_version = None
+          
           for folder, version, last_modified, size in apk_list:
-              if version in existing_releases:
+              tag = f"v{version}"
+              if tag in existing_releases:
                   print(f"Release for version {version} already exists, skipping")
-                  latest_existing_version = version
-              else:
-                  if latest_existing_version and tuple(map(int, version.split('.'))) <= tuple(map(int, latest_existing_version.split('.'))):
-                      print(f"Skipping version {version} as it's not newer than existing release {latest_existing_version}")
-                      continue
-                  
-                  print(f"Downloading version {version}")
-                  download_apk(folder, version)
-                  
-                  description = format_description(version, last_modified, size)
-                  print(f"Creating release for version {version}")
-                  release = repo.create_git_release(
-                      tag=version,
-                      name=f"Shopper {version}",
-                      message=description
-                  )
-                  release.upload_asset("shopper.apk", name="shopper.apk", content_type="application/vnd.android.package-archive")
-                  
-                  os.remove("shopper.apk")
-
+                  continue
+              
+              print(f"Downloading version {version}")
+              download_apk(folder, version)
+              
+              description = format_description(version, last_modified, size)
+              print(f"Creating release for version {version}")
+              release = repo.create_git_release(
+                  tag=tag,
+                  name=f"Shopper {version}",
+                  message=description
+              )
+              release.upload_asset("shopper.apk", name="shopper.apk", content_type="application/vnd.android.package-archive")
+              
+              os.remove("shopper.apk")
         shell: python
