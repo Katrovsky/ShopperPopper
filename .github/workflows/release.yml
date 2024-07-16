@@ -61,8 +61,16 @@ jobs:
           existing_releases = {release.tag_name: release for release in repo.get_releases()}
           apk_list = get_apk_list()
 
+          latest_existing_version = None
           for folder, version, last_modified, size in apk_list:
-              if version not in existing_releases:
+              if version in existing_releases:
+                  print(f"Release for version {version} already exists, skipping")
+                  latest_existing_version = version
+              else:
+                  if latest_existing_version:
+                      print(f"Skipping version {version} as it's older than existing release {latest_existing_version}")
+                      continue
+                  
                   print(f"Downloading version {version}")
                   download_apk(folder, version)
                   
@@ -76,7 +84,5 @@ jobs:
                   release.upload_asset("shopper.apk", name="shopper.apk", content_type="application/vnd.android.package-archive")
                   
                   os.remove("shopper.apk")
-              else:
-                  print(f"Release for version {version} already exists, skipping")
 
         shell: python
